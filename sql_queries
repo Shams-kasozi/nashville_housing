@@ -1,0 +1,167 @@
+/*
+CLEANING DATA WITH SQL QUERIES
+*/
+SELECT COUNT(*)
+FROM NashvillDB.dbo.NashvillHousing
+
+/*
+THE FIRST THING WE'RE GOING TO DO IS CHANGE THE SALE DATE
+BECAUSE IT HAS TIME (00:00:00) AT THE END WHICH HAS NO PURPOSE
+*/
+ALTER TABLE NashvillDB..NashvillHousing
+Add ConvertedSaleDate Date;
+
+UPDATE NashvillDB..NashvillHousing
+SET ConvertedSaleDate = CONVERT(Date, SaleDate)
+
+SELECT SaleDate, ConvertedSaleDate
+FROM NashvillDB.dbo.NashvillHousing
+
+-- POPULATE PROPERTY ADDRESS DATA
+
+SELECT PropertyAddress
+FROM NashvillDB.dbo.NashvillHousing
+WHERE PropertyAddress is null
+
+	/*
+	The issue is, when we run this querry above, we see that PropertyAddress has got 
+	some null values which is not supposed to be the case.
+	But when we check the ParcelID collumn we see that some values in that column are
+	the same, and their corresponding values in the same raw from the PropertyAddress
+	column are also the same.
+	So to solve the null value issue in the PropertyAddress column, we need to write a
+	querry which coppies the corresponding value in the PropertyAddress column incase
+	another value in that same column shares the same value from the ParcelID column.
+
+	We have to do a self join. I.e to join the table to it's self where if ParcelID is 
+	is equal to ParcelID, the PropertyAddress must be equal to PropertyAddress.
+	*/
+ 
+ SELECT a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress, ISNULL(a.PropertyAddress, b.PropertyAddress)
+ FROM NashvillDB.dbo.NashvillHousing a
+ JOIN NashvillDB.dbo.NashvillHousing b
+	ON a.ParcelID = b.ParcelID
+	AND a.[UniqueID ] <> b.[UniqueID ]
+ WHERE a.PropertyAddress is null
+/*
+This whole querry above will create a new column that'll replace the null values column
+*/
+
+-- Now we're updating the table to replace the null values in PropertyAdress
+UPDATE a
+SET PropertyAddress = ISNULL(a.PropertyAddress, b.PropertyAddress)
+FROM NashvillDB.dbo.NashvillHousing a 
+JOIN NashvillDB.dbo.NashvillHousing b
+	ON a.ParcelID = b.ParcelID
+	AND a.[UniqueID ] <> b.[UniqueID ]
+WHERE a.PropertyAddress is null
+
+-- Now we're breaking out Adress into Individual Columns (Adress, City, State)
+
+-- here is how to use SUBSTRING to break a string in to different strings
+SELECT
+SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1) as Address,
+SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) +1, LEN(PropertyAddress)) as Address
+FROM NashvillDB.dbo.NashvillHousing
+
+ALTER TABLE NashvillDB..NashvillHousing
+Add PropertySplitAddress nvarchar(255);
+
+UPDATE NashvillDB..NashvillHousing
+SET PropertySplitAddress = SUBSTRING(PropertyAddress, 1, CHARINDEX(',', PropertyAddress) -1)
+
+ALTER TABLE NashvillDB..NashvillHousing
+Add PropertySplitCity nvarchar(255);
+
+UPDATE NashvillDB..NashvillHousing
+SET PropertySplitCity = SUBSTRING(PropertyAddress, CHARINDEX(',', PropertyAddress) +1, LEN(PropertyAddress))
+
+
+/*
+	There is another way to break strings, whichis  by using PARSENAME, it's much simpler and straight forward
+	Let's use PARSENAME to split 'OwnerAddress' collumn 
+*/
+SELECT
+PARSENAME(REPLACE(OwnerAddress, ',', '.'), 3),
+PARSENAME(REPLACE(OwnerAddress, ',', '.'), 2),
+PARSENAME(REPLACE(OwnerAddress, ',', '.'), 1)
+FROM NashvillDB.dbo.NashvillHousing
+
+ALTER TABLE NashvillDB.dbo.NashvillHousing
+Add OwnerSplitAddress nvarchar(255);
+
+UPDATE NashvillDB.dbo.NashvillHousing
+SET OwnerSplitAddress = PARSENAME(REPLACE(OwnerAddress, ',', '.'), 3)
+
+ALTER TABLE NashvillDB.dbo.NashvillHousing
+Add OwnerSplitCity nvarchar(255);
+
+UPDATE NashvillDB.dbo.NashvillHousing
+SET OwnerSplitCity = PARSENAME(REPLACE(OwnerAddress, ',', '.'), 2)
+
+ALTER TABLE NashvillDB.dbo.NashvillHousing
+Add OwnerSplitState nvarchar(255);
+
+UPDATE NashvillDB.dbo.NashvillHousing
+SET OwnerSplitState = PARSENAME(REPLACE(OwnerAddress, ',', '.'), 1)
+
+SELECT *
+FROM NashvillDB.dbo.NashvillHousing
+
+-- Change Y and N in 'Sold as Vacant' field to YES and NO. 
+SELECT DISTINCT(SoldAsVacant), COUNT(SoldAsVacant)
+FROM NashvillDB.dbo.NashvillHousing
+Group by SoldAsVacant
+Order by 2
+
+Select SoldAsVacant,
+ CASE When SoldAsVacant = 'Y' Then 'Yes'
+	  When SoldAsVacant = 'N' Then 'No'
+	  ELSE SoldAsVacant
+	  End
+FROM NashvillDB..NashvillHousing
+
+UPDATE NashvillDB..NashvillHousing
+	Set SoldAsVacant = CASE When SoldAsVacant = 'Y' Then 'Yes'
+	  When SoldAsVacant = 'N' Then 'No'
+	  ELSE SoldAsVacant
+	  End 
+	  
+-- REMOVING DUPLICATES
+
+/*
+	We first run this querry to find all the duplicates. create a select statement that lists a new collumn 'Row_num'
+	Then we wrap it inside a CTE called 'RownNumCTE', which we then use to select the 'Row_num' Collumn but using a Where clouse 
+	toonly return those rows more than one item listed in this collumn. thats to say with duplicate collumns.
+*/
+ 
+
+/*
+ after that, use the same exact querry with a CTE but this time instead of selecting at the end, you instead 'DELETE' the 
+ collumn, where row_num is > 1. Get rid of the 'Order by' key word at the bottom.
+*/
+
+WITH RowNumCTE AS (
+	Select *,
+	ROW_NUMBER() OVER (
+	PARTITION BY ParcelID,
+				 PropertyAddress,
+				 SalePrice,
+				 SaleDate,
+				 LegalReference
+				 ORDER BY
+					UniqueID
+					) Row_num
+From NashvillDB..NashvillHousing
+)
+DELETE  
+From RowNumCTE
+Where Row_num > 1
+
+--DELETE UNSED COLLUMNS, keep in mind that this is non-recommended for you to permenently delete data.
+
+Select *
+From NashvillDB..NashvillHousing
+
+ALTER TABLE NashvillDB..NashvillHousing
+DROP COLUMN OwnerAddress, TaxDistrict, PropertyAddress, SaleDate
